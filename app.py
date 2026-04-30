@@ -14,7 +14,10 @@ st.set_page_config(
     layout="wide",
 )
 
-DEFAULT_DATA = Path("data/第一步_清洗后建模样本.csv")
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_DATA = BASE_DIR / "data" / "第一步_清洗后建模样本.csv"
 
 COL_MAP = {
     "省份编码": "province_id",
