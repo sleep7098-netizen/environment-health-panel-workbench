@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -95,7 +96,189 @@ CN_NAME = {
 def load_data(uploaded_file=None):
     if uploaded_file is not None:
         return pd.read_csv(uploaded_file, encoding="utf-8-sig")
-    return pd.read_csv(DEFAULT_DATA, encoding="utf-8-sig")
+    return pd.read_csv(str(DEFAULT_DATA), encoding="utf-8-sig")
+def pick_existing_columns(df, candidates):
+    """从候选变量中挑出数据中真实存在的列。"""
+    return [col for col in candidates if col in df.columns]
+
+
+def generate_markdown_report(df):
+    """根据当前数据自动生成 Markdown 研究报告。"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    n_rows, n_cols = df.shape
+
+    province_cols = pick_existing_columns(df, ["省份", "地区", "province", "region_name"])
+    year_cols = pick_existing_columns(df, ["年份", "year"])
+    region_cols = pick_existing_columns(df, ["区域", "region", "地区类型"])
+
+    pollutant_cols = pick_existing_columns(
+        df,
+        ["PM2.5", "PM₂.₅", "PM25", "PM10", "PM₁₀", "SO2", "SO₂", "NO2", "NO₂", "O3", "O₃"]
+    )
+
+    health_cols = pick_existing_columns(
+        df,
+        ["基准因变量", "呼吸系统健康负担指标", "呼吸系统健康指标", "住院率", "两周就诊率"]
+    )
+
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+    if province_cols:
+        n_provinces = df[province_cols[0]].nunique()
+    else:
+        n_provinces = "未识别"
+
+    if year_cols:
+        year_min = df[year_cols[0]].min()
+        year_max = df[year_cols[0]].max()
+        year_info = f"{year_min}—{year_max}"
+    else:
+        year_info = "未识别"
+
+    missing_count = int(df.isna().sum().sum())
+
+    desc_md = ""
+    if numeric_cols:
+        desc_md = df[numeric_cols].describe().T.round(3).to_markdown()
+
+    corr_md = ""
+    corr_cols = pollutant_cols + health_cols
+    corr_cols = list(dict.fromkeys([c for c in corr_cols if c in df.columns]))
+
+    if len(corr_cols) >= 2:
+        corr_md = df[corr_cols].corr().round(3).to_markdown()
+    else:
+        corr_md = "当前数据中可用于相关性分析的核心变量不足。"
+
+    report = f"""
+# 环境健康统计建模分析报告
+
+生成时间：{now}
+
+## 一、项目概况
+
+本报告基于“环境健康统计建模工作台”自动生成。项目围绕空气污染变量与呼吸系统健康负担代理指标之间的统计关系展开，主要用于本科毕业论文复盘、统计建模训练和后续研究拓展。
+
+## 二、数据概况
+
+- 样本观测数：{n_rows}
+- 字段数量：{n_cols}
+- 省份数量：{n_provinces}
+- 年份范围：{year_info}
+- 缺失值总数：{missing_count}
+
+## 三、核心变量
+
+### 1. 污染物变量
+
+当前识别到的污染物变量包括：
+
+{", ".join(pollutant_cols) if pollutant_cols else "暂未自动识别到污染物变量"}
+
+### 2. 健康负担变量
+
+当前识别到的健康相关变量包括：
+
+{", ".join(health_cols) if health_cols else "暂未自动识别到健康负担变量"}
+
+## 四、描述性统计
+
+{desc_md if desc_md else "当前数据中未识别到数值型变量，无法生成描述性统计表。"}
+
+## 五、核心变量相关性矩阵
+
+{corr_md}
+
+## 六、初步分析说明
+
+从统计建模角度看，本项目适合围绕以下问题继续展开：
+
+1. 空气污染变量与呼吸系统健康负担代理指标之间是否存在统计关联。
+2. 多类污染物之间是否存在较强相关性，是否可能引起多重共线性问题。
+3. 在控制省份和年份因素后，污染变量的系数方向和显著性是否保持稳定。
+4. 替换因变量后，主要结论是否仍具有一定延续性。
+5. 不同区域之间是否存在污染健康效应差异。
+
+## 七、研究解释建议
+
+在解释回归结果时，应注意区分“统计关联”和“因果效应”。由于本项目使用省级年度面板数据和健康代理指标，结果更适合作为宏观统计关系的识别依据，不宜直接解释为严格因果结论。
+
+## 八、后续拓展方向
+
+后续可以继续扩展：
+
+1. VIF 多重共线性诊断。
+2. 残差分析和异方差检验。
+3. 更完整的面板模型比较。
+4. 自动生成 Word 或 PDF 研究报告。
+5. 接入大模型能力，用于论文式解释、答辩问答和研究方案建议。
+"""
+
+    return report.strip()
+
+
+def generate_research_assistant_prompt(df):
+    """生成可复制给大模型的统计研究解释提示词。"""
+    n_rows, n_cols = df.shape
+
+    province_cols = pick_existing_columns(df, ["省份", "地区", "province", "region_name"])
+    year_cols = pick_existing_columns(df, ["年份", "year"])
+
+    pollutant_cols = pick_existing_columns(
+        df,
+        ["PM2.5", "PM₂.₅", "PM25", "PM10", "PM₁₀", "SO2", "SO₂", "NO2", "NO₂", "O3", "O₃", "CO"]
+    )
+
+    health_cols = pick_existing_columns(
+        df,
+        ["基准因变量", "呼吸系统健康负担指标", "呼吸系统健康指标", "稳健性因变量_住院率", "稳健性因变量_两周就诊率", "住院率", "两周就诊率"]
+    )
+
+    province_info = "未识别"
+    if province_cols:
+        province_info = f"{df[province_cols[0]].nunique()} 个省级地区"
+
+    year_info = "未识别"
+    if year_cols:
+        year_info = f"{df[year_cols[0]].min()}—{df[year_cols[0]].max()}"
+
+    prompt = f"""
+你是一名统计学与应用计量方向的研究助手。请基于下面的项目信息，帮助我生成适合论文写作、结果解释和答辩准备的研究说明。
+
+项目背景：
+我正在分析空气污染与呼吸系统健康负担之间的统计关系。数据为省级年度面板数据，样本量为 {n_rows} 条观测，字段数为 {n_cols} 个，样本范围为 {province_info}，年份范围为 {year_info}。
+
+核心污染物变量：
+{", ".join(pollutant_cols) if pollutant_cols else "当前未自动识别，请根据变量表判断"}
+
+健康负担相关变量：
+{", ".join(health_cols) if health_cols else "当前未自动识别，请根据变量表判断"}
+
+请按照以下结构输出：
+
+1. 研究问题概括：
+用一段话说明这个项目试图解决什么统计问题。
+
+2. 数据与变量说明：
+说明面板数据、污染物变量、健康负担代理指标和控制变量的作用。
+
+3. 模型解释：
+解释为什么可以使用 OLS、固定效应模型、稳健性检验、PCA 主成分分析和区域异质性分析。
+
+4. 结果解释注意事项：
+强调本研究更适合解释统计关联，而不是严格因果效应。
+
+5. 可能的答辩问题：
+列出 8 个老师可能追问的问题，并给出简短回答思路。
+
+6. 后续改进方向：
+从数据、模型、变量、因果识别和应用统计研究角度提出改进建议。
+
+要求：
+语言严谨，适合统计学本科毕业论文和研究生科研训练场景；不要编造不存在的数据结果；如果结果不显著，要谨慎解释。
+"""
+    return prompt.strip()
 
 
 def prepare(df: pd.DataFrame) -> pd.DataFrame:
@@ -369,4 +552,47 @@ with tab6:
 5. 最后给出可以放入论文的小结。
 """
     st.text_area("研究报告写作模板", template, height=320)
+
+st.markdown("---")
+st.subheader("自动研究报告生成")
+
+st.write(
+    "本模块可以根据当前数据自动生成 Markdown 格式的研究报告，"
+    "用于论文复盘、课程展示、项目说明和后续研究整理。"
+)
+
+report_md = generate_markdown_report(df_raw)
+
+with st.expander("预览自动生成的研究报告", expanded=False):
+    st.markdown(report_md)
+
+st.download_button(
+    label="下载 Markdown 研究报告",
+    data=report_md.encode("utf-8-sig"),
+    file_name="environment_health_research_report.md",
+    mime="text/markdown",
+    width="stretch"
+)
+
+
+st.markdown("---")
+st.subheader("智能研究助手")
+
+st.write(
+    "本模块用于把当前统计建模项目整理为结构化研究提示词，"
+    "可用于论文写作、结果解释、答辩准备和后续研究方案设计。"
+)
+
+assistant_prompt = generate_research_assistant_prompt(df_raw)
+
+with st.expander("查看结构化研究提示词", expanded=False):
+    st.code(assistant_prompt, language="text")
+
+st.download_button(
+    label="下载研究助手提示词",
+    data=assistant_prompt.encode("utf-8-sig"),
+    file_name="research_assistant_prompt.txt",
+    mime="text/plain",
+    width="stretch"
+)
 
